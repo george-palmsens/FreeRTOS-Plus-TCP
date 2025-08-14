@@ -68,6 +68,8 @@
     #define dnsTYPE_A_HOST            0x01U /**< DNS type A host. */
     #define dnsTYPE_AAAA_HOST         0x001CU
     #define dnsTYPE_ANY_HOST          0x00FFU
+    #define dnsTYPE_PTR               0x000CU /**< DNS type PTR (Pointer Record). */
+    #define dnsTYPE_SRV               0x0021U /**< DNS type SRV (Service Record). */
 
     #define dnsCLASS_IN               0x01U /**< DNS class IN (Internet). */
 
@@ -213,6 +215,35 @@
         }
         #include "pack_struct_end.h"
         typedef struct xLLMNRAnswer LLMNRAnswer_t;
+
+        #include "pack_struct_start.h"
+        struct xMDNSResponseMiddle
+        {
+            uint16_t usType;       /**< Type of the Resource record. */
+            uint16_t usClass;      /**< Class of the Resource record. */
+            uint32_t ulTTL;        /**< Seconds till this entry can be cached. */
+            uint16_t usDataLength; /**< Length of the address in this record. */
+        }
+        #include "pack_struct_end.h"
+        typedef struct xMDNSResponseMiddle MDNSResponseMiddle_t;
+
+        #include "pack_struct_start.h"
+        struct xMDNSResponseSRVEnd
+        {
+            uint16_t priority;
+            uint16_t weight;
+            uint16_t port;
+        }
+        #include "pack_struct_end.h"
+        typedef struct xMDNSResponseSRVEnd MDNSResponseSRVEnd_t;
+
+        #include "pack_struct_start.h"
+        struct xMDNSResponseHostAEnd
+        {
+            uint32_t ipAddr;
+        }
+        #include "pack_struct_end.h"
+        typedef struct xMDNSResponseHostAEnd MDNSResponseHostAEnd_t;
     #endif /* if ( ipconfigUSE_LLMNR == 1 ) || ( ipconfigUSE_MDNS == 1 ) */
 
     #if ( ipconfigUSE_NBNS == 1 )
@@ -282,6 +313,19 @@
 
     #if ( ipconfigUSE_MDNS == 1 ) || ( ipconfigUSE_LLMNR == 1 ) || ( ipconfigUSE_NBNS == 1 )
 
+    typedef struct xDNSRecord
+    {
+        uint16_t record_type;
+        const char * name;
+        union {
+            char* ptr_record;
+            struct {
+                const char * target;
+                uint16_t port;
+            } srv_record;
+        } data;
+    } DNSRecord_t;
+
 /*
  * The following function should be provided by the user and return true if it
  * matches the domain name.
@@ -289,7 +333,7 @@
         #if ( ipconfigIPv4_BACKWARD_COMPATIBLE == 1 )
             /* Even though the function is defined in main.c, the rule is violated. */
             /* misra_c_2012_rule_8_6_violation */
-            extern BaseType_t xApplicationDNSQueryHook( const char * pcName );
+            extern BaseType_t xApplicationDNSQueryHook( const DNSRecord_t ** outRecords, size_t * outLen );
         #else
             /* Even though the function is defined in main.c, the rule is violated. */
             /* misra_c_2012_rule_8_6_violation */
