@@ -442,11 +442,11 @@
                     if (xApplicationDNSQueryHook(&records, &n_records) == pdFALSE) {
                         break;
                     }
-
+                    bool they_asked_for_us = false;
                     for (size_t i = 0; i < n_records; i++) {
                         DNSRecord_t const * record = &records[i];
-                        if (strcmp(xSet.pcRequestedName, record->name) != 0 || (xSet.usType | record->record_type) == 0) {
-                            continue;
+                        if (strcmp(xSet.pcRequestedName, record->name) == 0) {
+                            they_asked_for_us = true;
                         }
                         extra_size += strlen(record->name) + 2; // Name
                                 extra_size += 2; // Type
@@ -466,6 +466,11 @@
                                 extra_size += 2; // Weight
                                 extra_size += 2; // Port
                                 extra_size += strlen(record->data.srv_record.target) + 2; // Target
+                                n_answers++;
+                            }
+                            case dnsTYPE_TXT:
+                            {
+                                extra_size += 1; // Zero byte string
                                 n_answers++;
                                 break;
                             }
@@ -528,20 +533,12 @@
                      vSetField16( xSet.pxDNSMessageHeader, DNSMessage_t, usAnswers, n_answers );
                      vSetField16( xSet.pxDNSMessageHeader, DNSMessage_t, usAuthorityRRs, 0 );                   /* No authority */
                      vSetField16( xSet.pxDNSMessageHeader, DNSMessage_t, usAdditionalRRs, 0 );
+                    vSetField16( xSet.pxDNSMessageHeader, DNSMessage_t, usQuestions, 0);
+
+                    uint8_t * const start_of_dns_answers = xSet.pucByte;
 
                      for (size_t i = 0; i < n_records; i++) {
                          DNSRecord_t const * record = &records[i];
-                         if (strcmp(xSet.pcRequestedName, record->name) != 0 || (xSet.usType | record->record_type) == 0) {
-                             continue;
-                         }
-                         switch (record->record_type) {
-                             case dnsTYPE_A_HOST:
-                             case dnsTYPE_PTR:
-                             case dnsTYPE_SRV:
-                                 break;
-                             default:
-                                 continue;
-                         }
                          memcpy(xSet.pucByte, record->name, strlen(record->name) + 1);
                          xSet.pucByte += strlen(record->name) + 1;
                          MDNSResponseMiddle_t* middle = (MDNSResponseMiddle_t*)xSet.pucByte;
@@ -584,21 +581,38 @@
                                  xSet.pucByte += strlen(record->data.srv_record.target) + 1;
                                  break;
                              }
+                            case dnsTYPE_TXT: {
+                                vSetField16(middle, MDNSResponseMiddle_t, usDataLength, 1);
+                                xSet.pucByte += sizeof(*middle);
+                                *xSet.pucByte++ = 0;
+                                break;
+                            }
                          }
+                    }
+
+
+                    uint8_t* const start_of_questions = (uint8_t*)(xSet.pxDNSMessageHeader) + sizeof(DNSMessage_t);
+
+                    size_t const size_of_questions = start_of_dns_answers - start_of_questions;
+
+                    size_t const size_of_answers = xSet.pucByte - start_of_dns_answers;
+
+                    if (they_asked_for_us) {
+                        memmove(start_of_questions, start_of_dns_answers, size_of_answers);
+
+                        xSet.pucByte -= size_of_questions;
 
                          size_t usLength = ( size_t ) ( xSet.pucByte - pucNewBuffer );
 
                          prepareReplyDNSMessage( pxNetworkBuffer, usLength );
                          /* This function will fill in the eth addresses and send the packet */
                          vReturnEthernetFrame( pxNetworkBuffer, pdFALSE );
+                    }
 
-                         if( pxNewBuffer != NULL )
-                         {
-                             vReleaseNetworkBufferAndDescriptor( pxNewBuffer );
-                         }
-                     }
-
-
+                    if( pxNewBuffer != NULL )
+                    {
+                        vReleaseNetworkBufferAndDescriptor( pxNewBuffer );
+                    }
                  }
                 ( void ) uxBytesRead;
             } while( ipFALSE_BOOL );
